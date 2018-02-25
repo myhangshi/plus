@@ -23,6 +23,23 @@ public:
         head->next = nullptr; 
         return prev; 
     }
+
+
+/* Function to reverse the linked list */
+void reverse(ListNode** head_ref)
+{
+    ListNode* prev   = NULL;
+    ListNode* current = *head_ref;
+    ListNode* next;
+    while (current != NULL)
+    {
+        next  = current->next;  
+        current->next = prev;   
+        prev = current;
+        current = next;
+    }
+    *head_ref = prev;
+}
     
     void reorderList(ListNode* head) {
         if (head == nullptr || head->next == nullptr) return; 
