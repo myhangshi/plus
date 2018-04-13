@@ -6,7 +6,7 @@
 
 using namespace std; 
 
-typedef struct { 
+struct { 
 	int x; 
 	int y; 
 } Step; 
@@ -29,7 +29,7 @@ typedef struct NextPos {
 	int nextPosToMidLength; 
 
 	bool operator < (const NextPos & a) const { 
-		return nextPosSteps > a.nextPosSteps && 
+		return nextPosSteps < a.nextPosSteps && 
 		      nextPosToMidLength < a.nextPosToMidLength; 
 	}
 }; 
