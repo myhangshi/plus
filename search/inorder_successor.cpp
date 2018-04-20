@@ -13,7 +13,7 @@ struct node
  
 struct node * minValue(struct node* node); 
  
-struct node * inOrderSuccessor(struct node *root, struct node *n)
+struct node * inOrderSuccessor1(struct node *root, struct node *n)
 {
   // step 1 of the above algorithm 
   if( n->right != NULL )
@@ -27,6 +27,27 @@ struct node * inOrderSuccessor(struct node *root, struct node *n)
      p = p->parent;
   }
   return p;
+}
+
+struct node *inOrderSuccessor(struct node *root, struct node *n)
+{
+    // step 1 of the above algorithm
+    if( n->right != NULL )
+        return minValue(n->right);
+ 
+    struct node *succ = NULL;
+ 
+    // Start from root and search for successor down the tree
+    while (root != NULL) {
+        if (n->data < root->data) {
+            succ = root;
+            root = root->left;
+        } else if (n->data > root->data)
+            root = root->right;
+        else break;
+    }
+ 
+    return succ;
 }
  
 /* Given a non-empty binary search tree, return the minimum data  
