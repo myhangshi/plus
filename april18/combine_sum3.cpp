@@ -1,6 +1,7 @@
 class Solution {
 public:
-    void combineSum3DFS(int k, int n, int level, vector<int> &out, vector<vector<int> > &res) { 
+    void combineSum3DFS(int k, int n, int level, vector<int> &out, 
+                        vector<vector<int> > &res) { 
         if (n < 0 || out.size() > k) return; 
         if (n == 0 && out.size() == k) res.push_back(out); 
         

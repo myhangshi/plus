@@ -1,3 +1,5 @@
+//http://www.cnblogs.com/grandyang/p/4601208.html
+
 class Solution {
 public:
     int calculate(string s) {

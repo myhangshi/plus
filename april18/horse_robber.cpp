@@ -1,3 +1,5 @@
+http://www.cnblogs.com/grandyang/p/4383632.html
+
 class Solution {
 public:
     int rob(vector<int>& nums) {

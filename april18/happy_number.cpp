@@ -1,3 +1,7 @@
+http://www.cnblogs.com/grandyang/p/4447233.html
+
+
+
 class Solution {
 public:
     int getSquare(int n) { 
