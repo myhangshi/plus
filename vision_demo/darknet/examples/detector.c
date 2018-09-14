@@ -281,6 +281,13 @@ void validate_detector_flip(char *datacfg, char *cfgfile, char *weightfile, char
         }
     }
 
+    /*
+    box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
+    float **probs = calloc(l.w*l.h*l.n, sizeof(float *));
+    for(j = 0; j < l.w*l.h*l.n; ++j) 
+        probs[j] = calloc(classes+1, sizeof(float *));
+    */ 
+
     int m = plist->size;
     int i=0;
     int t;
@@ -336,6 +343,8 @@ void validate_detector_flip(char *datacfg, char *cfgfile, char *weightfile, char
             int num = 0;
             detection *dets = get_network_boxes(net, w, h, thresh, .5, map, 0, &num);
             if (nms) do_nms_sort(dets, num, classes, nms);
+
+
             if (coco){
                 print_cocos(fp, path, dets, num, classes, w, h);
             } else if (imagenet){
@@ -792,7 +801,7 @@ void network_detect(network *net, image im, float thresh, float hier_thresh, flo
 void run_detector(int argc, char **argv)
 {
     char *prefix = find_char_arg(argc, argv, "-prefix", 0);
-    float thresh = find_float_arg(argc, argv, "-thresh", .5);
+    float thresh = find_float_arg(argc, argv, "-thresh", .24);
     float hier_thresh = find_float_arg(argc, argv, "-hier", .5);
     int cam_index = find_int_arg(argc, argv, "-c", 0);
     int frame_skip = find_int_arg(argc, argv, "-s", 0);
@@ -851,3 +860,68 @@ void run_detector(int argc, char **argv)
     //else if(0==strcmp(argv[2], "extract")) extract_detector(datacfg, cfg, weights, cam_index, filename, class, thresh, frame_skip);
     //else if(0==strcmp(argv[2], "censor")) censor_detector(datacfg, cfg, weights, cam_index, filename, class, thresh, frame_skip);
 }
+
+
+void proc_img_flr(char *datacfg, char *cfgfile, char *weightfile, char *inflrname, char *outflrname, char *outtxtname, float thresh, float hier_thresh, int stfrmcnt, int ndfrmcnt)
+{
+    list *options = read_data_cfg(datacfg);
+    char *name_list = option_find_str(options, "names", "data/names.list");
+    char **names = get_labels(name_list);
+
+    image **alphabet = load_alphabet();
+    network *net = load_network(cfgfile, weightfile, 0);
+    set_batch_network(net, 1);
+    srand(2222222);
+    double time;
+    int frmcnt;
+    float nms=.3;
+    //mkdir(outflrname, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    FILE* outtxt = fopen(outtxtname, "w");
+    fclose(outtxt);
+    for (frmcnt = stfrmcnt; frmcnt <= ndfrmcnt; ++frmcnt) {
+        //FIXME 
+        char inputnm[128] = { 0 };
+        sprintf(inputnm, "%06d.jpg", frmcnt);
+        char input[128] = { 0 };
+        sprintf(input, "%s", inflrname);
+        strcat(input, inputnm);
+
+        image im = load_image_color(input,0,0);
+        image sized = letterbox_image(im, net->w, net->h);
+        //image sized = resize_image(im, net->w, net->h);
+        //image sized2 = resize_max(im, net->w);
+        //image sized = crop_image(sized2, -((net->w - sized2.w)/2), -((net->h - sized2.h)/2), net->w, net->h);
+        //resize_network(net, sized.w, sized.h);
+        layer l = net->layers[net->n-1];
+
+
+        float *X = sized.data;
+        time=what_time_is_it_now();
+        network_predict(net, X);
+        printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
+
+
+        int nboxes = 0;
+        detection *dets = get_network_boxes(net, im.w, im.h, thresh, 0, 0, 0, &nboxes);
+        //if (nms) do_nms_obj(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+        if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
+
+       
+        char outputnm[128] = { 0 };
+        sprintf(outputnm, "%06d", frmcnt);
+        char output[128] = { 0 };
+        sprintf(output, "%s", outflrname);
+        strcat(output, outputnm);
+
+
+        draw_detections(im, dets, nboxes, thresh, names, alphabet, l.classes);
+        save_image(im, output);
+
+        free_detections(dets, nboxes);
+ 
+        free_image(im);
+        free_image(sized);
+
+
+    }
+ }
