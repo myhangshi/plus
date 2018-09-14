@@ -1,0 +1,342 @@
+diff --git a/Makefile b/Makefile
+index a1e4604..6b77994 100644
+--- a/Makefile
++++ b/Makefile
+@@ -58,7 +58,7 @@ LDFLAGS+= -lcudnn
+ endif
+ 
+ OBJ=gemm.o utils.o cuda.o deconvolutional_layer.o convolutional_layer.o list.o image.o activations.o im2col.o col2im.o blas.o crop_layer.o dropout_layer.o maxpool_layer.o softmax_layer.o data.o matrix.o network.o connected_layer.o cost_layer.o parser.o option_list.o detection_layer.o route_layer.o upsample_layer.o box.o normalization_layer.o avgpool_layer.o layer.o local_layer.o shortcut_layer.o logistic_layer.o activation_layer.o rnn_layer.o gru_layer.o crnn_layer.o demo.o batchnorm_layer.o region_layer.o reorg_layer.o tree.o  lstm_layer.o l2norm_layer.o yolo_layer.o iseg_layer.o
+-EXECOBJA=captcha.o lsd.o super.o art.o tag.o cifar.o go.o rnn.o segmenter.o regressor.o classifier.o coco.o yolo.o detector.o nightmare.o instance-segmenter.o darknet.o
++EXECOBJA=captcha.o lsd.o super.o art.o tag.o cifar.o go.o rnn.o segmenter.o regressor.o classifier.o coco.o yolo.o detector.o nightmare.o instance-segmenter.o darknet.o attention.o 
+ ifeq ($(GPU), 1) 
+ LDFLAGS+= -lstdc++ 
+ OBJ+=convolutional_kernels.o deconvolutional_kernels.o activation_kernels.o im2col_kernels.o col2im_kernels.o blas_kernels.o crop_layer_kernels.o dropout_layer_kernels.o maxpool_layer_kernels.o avgpool_layer_kernels.o
+diff --git a/examples/attention.c b/examples/attention.c
+index cd1e579..6d9b687 100644
+--- a/examples/attention.c
++++ b/examples/attention.c
+@@ -287,7 +287,7 @@ void validate_attention_single(char *datacfg, char *filename, char *weightfile)
+         printf("\n");
+         copy_cpu(classes, pred, 1, avgs, 1);
+         top_k(pred + classes, divs*divs, divs*divs, inds);
+-        show_image(crop, "crop");
++        show_image(crop, "crop", 1);
+         for(j = 0; j < extra; ++j){
+             int index = inds[j];
+             int row = index / divs;
+@@ -298,7 +298,7 @@ void validate_attention_single(char *datacfg, char *filename, char *weightfile)
+             image tile = crop_image(crop, x, y, net->w, net->h);
+             float *pred = network_predict(net, tile.data);
+             axpy_cpu(classes, 1., pred, 1, avgs, 1);
+-            show_image(tile, "tile");
++            show_image(tile, "tile", 1);
+             //cvWaitKey(10);
+         }
+         if(net->hierarchy) hierarchy_predictions(pred, net->outputs, net->hierarchy, 1, 1);
+diff --git a/examples/darknet.c b/examples/darknet.c
+index 99b0d64..bb56130 100644
+--- a/examples/darknet.c
++++ b/examples/darknet.c
+@@ -6,12 +6,14 @@
+ 
+ extern void predict_classifier(char *datacfg, char *cfgfile, char *weightfile, char *filename, int top);
+ extern void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen);
++extern void proc_img_flr(char *datacfg, char *cfgfile, char *weightfile, char *inflrname, char *outflrname, char *outtxtname, float thresh, float hier_thresh, int stfrmcnt, int ndfrmcnt);
+ extern void run_yolo(int argc, char **argv);
+ extern void run_detector(int argc, char **argv);
+ extern void run_coco(int argc, char **argv);
+ extern void run_captcha(int argc, char **argv);
+ extern void run_nightmare(int argc, char **argv);
+ extern void run_classifier(int argc, char **argv);
++extern void run_attention(int argc, char **argv);
+ extern void run_regressor(int argc, char **argv);
+ extern void run_segmenter(int argc, char **argv);
+ extern void run_isegmenter(int argc, char **argv);
+@@ -434,7 +436,7 @@ int main(int argc, char **argv)
+     } else if (0 == strcmp(argv[1], "detector")){
+         run_detector(argc, argv);
+     } else if (0 == strcmp(argv[1], "detect")){
+-        float thresh = find_float_arg(argc, argv, "-thresh", .5);
++        float thresh = find_float_arg(argc, argv, "-thresh", .24);
+         char *filename = (argc > 4) ? argv[4]: 0;
+         char *outfile = find_char_arg(argc, argv, "-out", 0);
+         int fullscreen = find_arg(argc, argv, "-fullscreen");
+@@ -451,6 +453,8 @@ int main(int argc, char **argv)
+         predict_classifier("cfg/imagenet1k.data", argv[2], argv[3], argv[4], 5);
+     } else if (0 == strcmp(argv[1], "classifier")){
+         run_classifier(argc, argv);
++    } else if (0 == strcmp(argv[1], "attention")){
++        run_attention(argc, argv);
+     } else if (0 == strcmp(argv[1], "regressor")){
+         run_regressor(argc, argv);
+     } else if (0 == strcmp(argv[1], "isegmenter")){
+@@ -501,6 +505,8 @@ int main(int argc, char **argv)
+         mkimg(argv[2], argv[3], atoi(argv[4]), atoi(argv[5]), atoi(argv[6]), argv[7]);
+     } else if (0 == strcmp(argv[1], "imtest")){
+         test_resize(argv[2]);
++    } else if (0 == strcmp(argv[1], "procimgflr")){
++        proc_img_flr(argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], atof(argv[8]), atof(argv[9]), atoi(argv[10]), atoi(argv[11]));
+     } else {
+         fprintf(stderr, "Not an option: %s\n", argv[1]);
+     }
+diff --git a/examples/detector.c b/examples/detector.c
+index b503fc6..d41f996 100644
+--- a/examples/detector.c
++++ b/examples/detector.c
+@@ -281,6 +281,13 @@ void validate_detector_flip(char *datacfg, char *cfgfile, char *weightfile, char
+         }
+     }
+ 
++    /*
++    box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
++    float **probs = calloc(l.w*l.h*l.n, sizeof(float *));
++    for(j = 0; j < l.w*l.h*l.n; ++j) 
++        probs[j] = calloc(classes+1, sizeof(float *));
++    */ 
++
+     int m = plist->size;
+     int i=0;
+     int t;
+@@ -336,6 +343,8 @@ void validate_detector_flip(char *datacfg, char *cfgfile, char *weightfile, char
+             int num = 0;
+             detection *dets = get_network_boxes(net, w, h, thresh, .5, map, 0, &num);
+             if (nms) do_nms_sort(dets, num, classes, nms);
++
++
+             if (coco){
+                 print_cocos(fp, path, dets, num, classes, w, h);
+             } else if (imagenet){
+@@ -792,7 +801,7 @@ void network_detect(network *net, image im, float thresh, float hier_thresh, flo
+ void run_detector(int argc, char **argv)
+ {
+     char *prefix = find_char_arg(argc, argv, "-prefix", 0);
+-    float thresh = find_float_arg(argc, argv, "-thresh", .5);
++    float thresh = find_float_arg(argc, argv, "-thresh", .24);
+     float hier_thresh = find_float_arg(argc, argv, "-hier", .5);
+     int cam_index = find_int_arg(argc, argv, "-c", 0);
+     int frame_skip = find_int_arg(argc, argv, "-s", 0);
+@@ -851,3 +860,68 @@ void run_detector(int argc, char **argv)
+     //else if(0==strcmp(argv[2], "extract")) extract_detector(datacfg, cfg, weights, cam_index, filename, class, thresh, frame_skip);
+     //else if(0==strcmp(argv[2], "censor")) censor_detector(datacfg, cfg, weights, cam_index, filename, class, thresh, frame_skip);
+ }
++
++
++void proc_img_flr(char *datacfg, char *cfgfile, char *weightfile, char *inflrname, char *outflrname, char *outtxtname, float thresh, float hier_thresh, int stfrmcnt, int ndfrmcnt)
++{
++    list *options = read_data_cfg(datacfg);
++    char *name_list = option_find_str(options, "names", "data/names.list");
++    char **names = get_labels(name_list);
++
++    image **alphabet = load_alphabet();
++    network *net = load_network(cfgfile, weightfile, 0);
++    set_batch_network(net, 1);
++    srand(2222222);
++    double time;
++    int frmcnt;
++    float nms=.3;
++    //mkdir(outflrname, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
++    FILE* outtxt = fopen(outtxtname, "w");
++    fclose(outtxt);
++    for (frmcnt = stfrmcnt; frmcnt <= ndfrmcnt; ++frmcnt) {
++        //FIXME 
++        char inputnm[128] = { 0 };
++        sprintf(inputnm, "%06d.jpg", frmcnt);
++        char input[128] = { 0 };
++        sprintf(input, "%s", inflrname);
++        strcat(input, inputnm);
++
++        image im = load_image_color(input,0,0);
++        image sized = letterbox_image(im, net->w, net->h);
++        //image sized = resize_image(im, net->w, net->h);
++        //image sized2 = resize_max(im, net->w);
++        //image sized = crop_image(sized2, -((net->w - sized2.w)/2), -((net->h - sized2.h)/2), net->w, net->h);
++        //resize_network(net, sized.w, sized.h);
++        layer l = net->layers[net->n-1];
++
++
++        float *X = sized.data;
++        time=what_time_is_it_now();
++        network_predict(net, X);
++        printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
++
++
++        int nboxes = 0;
++        detection *dets = get_network_boxes(net, im.w, im.h, thresh, 0, 0, 0, &nboxes);
++        //if (nms) do_nms_obj(boxes, probs, l.w*l.h*l.n, l.classes, nms);
++        if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
++
++       
++        char outputnm[128] = { 0 };
++        sprintf(outputnm, "%06d", frmcnt);
++        char output[128] = { 0 };
++        sprintf(output, "%s", outflrname);
++        strcat(output, outputnm);
++
++
++        draw_detections(im, dets, nboxes, thresh, names, alphabet, l.classes);
++        save_image(im, output);
++
++        free_detections(dets, nboxes);
++ 
++        free_image(im);
++        free_image(sized);
++
++
++    }
++ }
+diff --git a/include/darknet.h b/include/darknet.h
+index b0a65e9..3f5dca1 100644
+--- a/include/darknet.h
++++ b/include/darknet.h
+@@ -174,6 +174,7 @@ struct layer{
+     int background;
+     int rescore;
+     int objectness;
++    int does_cost; 
+     int joint;
+     int noadjust;
+     int reorg;
+@@ -677,7 +678,8 @@ image *get_weights(layer l);
+ 
+ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const char *filename, char **names, int classes, int frame_skip, char *prefix, int avg, float hier_thresh, int w, int h, int fps, int fullscreen);
+ void get_detection_detections(layer l, int w, int h, float thresh, detection *dets);
+-
++void get_detection_boxes(layer l, int w, int h, float thresh, float **probs, box *boxes, int only_objectness);
++ 
+ char *option_find_str(list *l, char *key, char *def);
+ int option_find_int(list *l, char *key, int def);
+ int option_find_int_quiet(list *l, char *key, int def);
+@@ -691,6 +693,7 @@ void load_weights_upto(network *net, char *filename, int start, int cutoff);
+ void zero_objectness(layer l);
+ void get_region_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, float tree_thresh, int relative, detection *dets);
+ int get_yolo_detections(layer l, int w, int h, int netw, int neth, float thresh, int *map, int relative, detection *dets);
++void get_region_boxes(layer l, int w, int h, int netw, int neth, float thresh, float **probs, box *boxes, float **masks, int only_objectness, int *map, float tree_thresh, int relative); 
+ void free_network(network *net);
+ void set_batch_network(network *net, int b);
+ void set_temp_network(network *net, float t);
+@@ -711,6 +714,7 @@ void free_matrix(matrix m);
+ void test_resize(char *filename);
+ void save_image(image p, const char *name);
+ int show_image(image p, const char *name, int ms);
++//void show_image(image p, const char *name);
+ image copy_image(image p);
+ void draw_box_width(image a, int x1, int y1, int x2, int y2, int w, float r, float g, float b);
+ float get_current_rate(network *net);
+@@ -733,11 +737,15 @@ double what_time_is_it_now();
+ image rotate_image(image m, float rad);
+ void visualize_network(network *net);
+ float box_iou(box a, box b);
++void do_nms(box *boxes, float **probs, int total, int classes, float thresh);
++
+ data load_all_cifar10();
+ box_label *read_boxes(char *filename, int *n);
+ box float_to_box(float *f, int stride);
+ void draw_detections(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes);
+-
++//void draw_detections(image im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes);
++void output_detections(int frmcnt, char *outflrname, char *outtxtname, image im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes);
++ 
+ matrix network_predict_data(network *net, data test);
+ image **load_alphabet();
+ image get_network_image(network *net);
+@@ -749,6 +757,8 @@ float *network_predict_image(network *net, image im);
+ void network_detect(network *net, image im, float thresh, float hier_thresh, float nms, detection *dets);
+ detection *get_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, int *num);
+ void free_detections(detection *dets, int n);
++int num_boxes(network *net);
++box *make_boxes(network *net);
+ 
+ void reset_network_state(network *net, int b);
+ 
+diff --git a/src/image.c b/src/image.c
+index c112dd8..852d29d 100644
+--- a/src/image.c
++++ b/src/image.c
+@@ -309,6 +309,87 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
+     }
+ }
+ 
++
++void output_detections(int frmcnt, char *outflrname, char *outtxtname, image im, int num, float thresh, box *boxes, float **probs, float **masks, char **names, image **alphabet, int classes)
++{
++    FILE* outtxt = fopen(outtxtname, "a");
++
++    int i,j;
++
++    for(i = 0; i < num; ++i){
++        char labelstr[4096] = {0};
++        int class = -1;
++        for(j = 0; j < classes; ++j){
++            if (probs[i][j] > thresh){
++                if (class < 0) {
++                    strcat(labelstr, names[j]);
++                    class = j;
++                } else {
++                    strcat(labelstr, ", ");
++                    strcat(labelstr, names[j]);
++                }
++                printf("%s: %.3f\n", names[j], probs[i][j]*100);
++            }
++        }
++        if(class >= 0){
++            int width = im.h * .006;
++
++            /*
++               if(0){
++               width = pow(prob, 1./2.)*10+1;
++               alphabet = 0;
++               }
++             */
++
++            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
++            int offset = class*123457 % classes;
++            float red = get_color(2,offset,classes);
++            float green = get_color(1,offset,classes);
++            float blue = get_color(0,offset,classes);
++            float rgb[3];
++
++            //width = prob*20+2;
++
++            rgb[0] = red;
++            rgb[1] = green;
++            rgb[2] = blue;
++            box b = boxes[i];
++
++            int left  = (b.x-b.w/2.)*im.w;
++            int right = (b.x+b.w/2.)*im.w;
++            int top   = (b.y-b.h/2.)*im.h;
++            int bot   = (b.y+b.h/2.)*im.h;
++
++            if(left < 0) left = 0;
++            if(right > im.w-1) right = im.w-1;
++            if(top < 0) top = 0;
++            if(bot > im.h-1) bot = im.h-1;
++
++            draw_box_width(im, left, top, right, bot, width, red, green, blue);
++            if (alphabet) {
++                image label = get_label(alphabet, labelstr, (im.h*.03)/10);
++                draw_label(im, top + width, left, label, rgb);
++                free_image(label);
++            }
++            if (masks){
++                image mask = float_to_image(14, 14, 1, masks[i]);
++                image resized_mask = resize_image(mask, b.w*im.w, b.h*im.h);
++                image tmask = threshold_image(resized_mask, .5);
++                embed_image(tmask, im, left, top);
++                free_image(mask);
++                free_image(resized_mask);
++                free_image(tmask);
++            }
++
++            fprintf(outtxt, "%d,-1,%d,%d,%d,%d,%.3f,-1,-1,-1,%s\n",
++                frmcnt, left, top, (right-left), (bot-top),
++                probs[i][class]*100, names[class]);
++        }
++    }
++
++    fclose(outtxt);
++}
++
+ void transpose_image(image im)
+ {
+     assert(im.w == im.h);
