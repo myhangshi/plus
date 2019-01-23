@@ -10,6 +10,7 @@ from manager import Manager
 from worker import ExperimentWorker
 
 import random
+import time 
 
 
 class Model(nn.Module):
@@ -65,13 +66,22 @@ if __name__ == "__main__":
     host = sys.argv[2]
     port = int(sys.argv[3])
     app = web.Application()
+    print("role is " + role)
 
     if role == 'manager':
-        app = web.Application()
+        #app = web.Application()
         manager = Manager(app)
         model = Model()
         manager.register_experiment(model)
+        web.run_app(app, port=port)
+
+
     elif role == 'worker':
+        print('get into worker')
         model = Model()
         worker = LinearTestWorker(app, model, host, port=port)
-    web.run_app(app, port=port)
+        web.run_app(app, port=port)
+    
+    #while True: 
+    #    print("awake, 10 seconds now, sleep again")
+    #    time.sleep(10)    

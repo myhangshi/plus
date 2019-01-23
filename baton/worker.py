@@ -18,7 +18,8 @@ class ExperimentWorker(object):
         self.port = port
         self.worker_host = worker_host
         self.manager = manager
-        self.manager_url = "http://{}/{}/".format(manager, self.name)
+        self.manager_url = "http://{}:{}/{}/".format(manager, self.port, self.name)
+        #self.manager_url = "http://{}/{}/".format(manager, self.name)
         self.__session = None
         self.register_handlers()
         self.n_updates = 0
