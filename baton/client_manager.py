@@ -35,7 +35,8 @@ class ClientManager(object):
     async def notify_clients(self, client_method, http_method='GET',
                              client_callback=None, notify_callback=None,
                              **kwargs):
-        await self.cull_clients()
+        #await self.cull_clients()
+        print("going into notifying the clients") 
         result = await asyncio.gather(
             *[self.notify_client(c, client_method, http_method=http_method,
                                  callback=client_callback,
@@ -50,6 +51,8 @@ class ClientManager(object):
                             callback=None, **kwargs):
         url = urljoin(self.clients[client_id]['url'], client_method)
         url += "?client_id={}&key={}".format(client_id, self.clients[client_id]['key'])  # TODO: fix this
+        print("inside single notify client ", url) 
+
         result = False
         try:
             async with self._session.request(http_method, url, **kwargs) as resp:

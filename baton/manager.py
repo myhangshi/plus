@@ -49,6 +49,8 @@ class Experiment(object):
         return web.json_response(self._update_loss_history)
 
     async def trigger_start_round(self, request):
+
+        print("get a request trigger start round") 
         try:
             n_epoch = int(request.query['n_epoch'])
         except KeyError:
@@ -79,6 +81,8 @@ class Experiment(object):
             'update_name': update_name,
             'n_epoch': n_epoch,
         }
+        print("data is", pickle.dumps(data)) 
+
         result = await self.client_manager.notify_clients(
             'round_start',
             http_method='POST',
